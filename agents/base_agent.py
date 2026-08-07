@@ -1,20 +1,19 @@
 """
 base_agent.py
-Base class for all NovaMentor agents. Handles calls to the Anthropic API
-and falls back to a offline template response when no API key is set,
-so the app is fully demoable without credentials.
+Base class for all NovaMentor agents. Calls Google's Gemini API (free tier,
+no credit card required) and falls back to an offline template response
+when no API key is set, so the app is fully demoable without credentials.
 """
 
-import os
 import streamlit as st
 
 try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
 except ImportError:
-    ANTHROPIC_AVAILABLE = False
+    GEMINI_AVAILABLE = False
 
-MODEL_NAME = "claude-sonnet-4-6"
+MODEL_NAME = "gemini-2.5-flash"
 
 
 class BaseAgent:
@@ -32,7 +31,7 @@ class BaseAgent:
     system_prompt = "You are a helpful assistant."
     offline_fallback = (
         "This is demo/offline mode (no API key set in the sidebar). "
-        "Add your Anthropic API key to get real responses from this agent."
+        "Add a free Gemini API key to get real responses from this agent."
     )
 
     def __init__(self):
@@ -51,48 +50,50 @@ class BaseAgent:
     def reset(self):
         st.session_state.chat_histories[self.name] = []
 
-    def _get_client(self):
-        api_key = st.session_state.get("anthropic_api_key", "").strip()
-        if not api_key or not ANTHROPIC_AVAILABLE:
+    def _get_model(self, system_prompt):
+        api_key = st.session_state.get("gemini_api_key", "").strip()
+        if not api_key or not GEMINI_AVAILABLE:
             return None
         try:
-            return anthropic.Anthropic(api_key=api_key)
+            genai.configure(api_key=api_key)
+            return genai.GenerativeModel(
+                model_name=MODEL_NAME,
+                system_instruction=system_prompt,
+            )
         except Exception:
             return None
 
     def respond(self, user_input, context=""):
         """
-        Sends user_input (plus any project context) to the model using
-        this agent's system prompt, and returns the assistant's reply.
-        Falls back to a canned response if no API key is configured.
+        Sends user_input (plus any project context) to Gemini using this
+        agent's system prompt, and returns the assistant's reply. Falls
+        back to a canned response if no API key is configured.
         """
         self.add_message("user", user_input)
-
-        client = self._get_client()
-        if client is None:
-            reply = self._offline_reply(user_input)
-            self.add_message("assistant", reply)
-            return reply
 
         full_system_prompt = self.system_prompt
         if context:
             full_system_prompt += f"\n\nProject context provided by the student:\n{context}"
 
+        model = self._get_model(full_system_prompt)
+        if model is None:
+            reply = self._offline_reply(user_input)
+            self.add_message("assistant", reply)
+            return reply
+
         try:
-            api_messages = [
-                {"role": m["role"], "content": m["content"]}
-                for m in self.history
+            # Gemini uses "user"/"model" roles; translate our history.
+            gemini_history = [
+                {
+                    "role": "user" if m["role"] == "user" else "model",
+                    "parts": [m["content"]],
+                }
+                for m in self.history[:-1]
                 if m["role"] in ("user", "assistant")
             ]
-            response = client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=1500,
-                system=full_system_prompt,
-                messages=api_messages,
-            )
-            reply = "".join(
-                block.text for block in response.content if block.type == "text"
-            )
+            chat = model.start_chat(history=gemini_history)
+            response = chat.send_message(user_input)
+            reply = response.text
         except Exception as e:
             reply = f"⚠️ API error: {e}\n\n{self._offline_reply(user_input)}"
 
@@ -104,4 +105,3 @@ class BaseAgent:
             f"**[{self.name} — offline demo reply]**\n\n"
             f"{self.offline_fallback}\n\n"
             f"You asked: _{user_input}_"
-        )
