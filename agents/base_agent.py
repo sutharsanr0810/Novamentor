@@ -1,107 +1,110 @@
 """
-base_agent.py
-Base class for all NovaMentor agents. Calls Google's Gemini API (free tier,
-no credit card required) and falls back to an offline template response
-when no API key is set, so the app is fully demoable without credentials.
+NovaMentor — AI-Driven Multi-Agent Framework for Academic Project
+Guidance and Documentation.
+
+Run locally with:
+    streamlit run app.py
 """
 
 import streamlit as st
+from agents.specialized_agents import AGENT_REGISTRY
+from utils.export import build_markdown_report
 
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
+st.set_page_config(
+    page_title="NovaMentor",
+    page_icon="🧭",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-MODEL_NAME = "gemini-2.5-flash"
+# ---------------------------------------------------------------- session --
+if "project_title" not in st.session_state:
+    st.session_state.project_title = ""
+if "project_context" not in st.session_state:
+    st.session_state.project_context = ""
+if "gemini_api_key" not in st.session_state:
+    st.session_state.gemini_api_key = ""
+if "chat_histories" not in st.session_state:
+    st.session_state.chat_histories = {}
 
+# ------------------------------------------------------------------ sidebar --
+with st.sidebar:
+    st.markdown("## 🧭 NovaMentor")
+    st.caption("AI-Driven Multi-Agent Framework for Academic Project Guidance")
 
-class BaseAgent:
-    """
-    Parent class for every specialised agent (Requirement Analyzer,
-    Research Assistant, Code Mentor, Documentation Generator, Viva Coach).
+    st.markdown("### API Configuration")
+    st.session_state.gemini_api_key = st.text_input(
+        "Gemini API key",
+        value=st.session_state.gemini_api_key,
+        type="password",
+        help=(
+            "Free key from https://aistudio.google.com/apikey — leave blank "
+            "to use offline demo mode with canned responses."
+        ),
+    )
+    if not st.session_state.gemini_api_key:
+        st.info("Running in offline demo mode. Add a free Gemini key above for live AI responses.")
 
-    Subclasses only need to set `name`, `role_description`, and
-    `system_prompt`. Everything else (API call, offline fallback,
-    chat history) is handled here.
-    """
-
-    name = "Base Agent"
-    role_description = "Generic agent"
-    system_prompt = "You are a helpful assistant."
-    offline_fallback = (
-        "This is demo/offline mode (no API key set in the sidebar). "
-        "Add a free Gemini API key to get real responses from this agent."
+    st.markdown("### Your Project")
+    st.session_state.project_title = st.text_input(
+        "Project title", value=st.session_state.project_title
+    )
+    st.session_state.project_context = st.text_area(
+        "Project context (idea, domain, constraints, progress so far)",
+        value=st.session_state.project_context,
+        height=160,
+        help="Shared with every agent so they give context-aware answers.",
     )
 
-    def __init__(self):
-        if "chat_histories" not in st.session_state:
-            st.session_state.chat_histories = {}
-        if self.name not in st.session_state.chat_histories:
-            st.session_state.chat_histories[self.name] = []
+    st.markdown("### Agents")
+    agent_names = list(AGENT_REGISTRY.keys())
+    selected_agent_name = st.radio(
+        "Choose an agent to talk to",
+        agent_names,
+        format_func=lambda n: n,
+        label_visibility="collapsed",
+    )
+    st.caption(AGENT_REGISTRY[selected_agent_name].role_description)
 
-    @property
-    def history(self):
-        return st.session_state.chat_histories[self.name]
+    st.markdown("---")
+    if st.button("🗑️ Clear this agent's chat", use_container_width=True):
+        st.session_state.chat_histories[selected_agent_name] = []
+        st.rerun()
 
-    def add_message(self, role, content):
-        self.history.append({"role": role, "content": content})
+# -------------------------------------------------------------------- main --
+agent = AGENT_REGISTRY[selected_agent_name]()
 
-    def reset(self):
-        st.session_state.chat_histories[self.name] = []
+st.title(f"{selected_agent_name}")
+st.caption(agent.role_description)
 
-    def _get_model(self, system_prompt):
-        api_key = st.session_state.get("gemini_api_key", "").strip()
-        if not api_key or not GEMINI_AVAILABLE:
-            return None
-        try:
-            genai.configure(api_key=api_key)
-            return genai.GenerativeModel(
-                model_name=MODEL_NAME,
-                system_instruction=system_prompt,
-            )
-        except Exception:
-            return None
+# Render existing chat
+for msg in agent.history:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-    def respond(self, user_input, context=""):
-        """
-        Sends user_input (plus any project context) to Gemini using this
-        agent's system prompt, and returns the assistant's reply. Falls
-        back to a canned response if no API key is configured.
-        """
-        self.add_message("user", user_input)
+# Chat input
+user_input = st.chat_input(f"Ask the {selected_agent_name}...")
+if user_input:
+    with st.chat_message("user"):
+        st.markdown(user_input)
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            reply = agent.respond(user_input, context=st.session_state.project_context)
+        st.markdown(reply)
 
-        full_system_prompt = self.system_prompt
-        if context:
-            full_system_prompt += f"\n\nProject context provided by the student:\n{context}"
-
-        model = self._get_model(full_system_prompt)
-        if model is None:
-            reply = self._offline_reply(user_input)
-            self.add_message("assistant", reply)
-            return reply
-
-        try:
-            # Gemini uses "user"/"model" roles; translate our history.
-            gemini_history = [
-                {
-                    "role": "user" if m["role"] == "user" else "model",
-                    "parts": [m["content"]],
-                }
-                for m in self.history[:-1]
-                if m["role"] in ("user", "assistant")
-            ]
-            chat = model.start_chat(history=gemini_history)
-            response = chat.send_message(user_input)
-            reply = response.text
-        except Exception as e:
-            reply = f"⚠️ API error: {e}\n\n{self._offline_reply(user_input)}"
-
-        self.add_message("assistant", reply)
-        return reply
-
-    def _offline_reply(self, user_input):
-        return (
-            f"**[{self.name} — offline demo reply]**\n\n"
-            f"{self.offline_fallback}\n\n"
-            f"You asked: _{user_input}_"
+# ------------------------------------------------------------- report tab --
+st.markdown("---")
+with st.expander("📄 Export project report (combines all agent conversations)"):
+    report_md = build_markdown_report(
+        st.session_state.project_title,
+        st.session_state.project_context,
+        st.session_state.chat_histories,
+    )
+    st.text_area("Preview", report_md, height=250)
+    st.download_button(
+        "Download as Markdown",
+        data=report_md,
+        file_name=f"{(st.session_state.project_title or 'novamentor_report').replace(' ', '_')}.md",
+        mime="text/markdown",
+        use_container_width=True,
+    )
