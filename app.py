@@ -22,8 +22,8 @@ if "project_title" not in st.session_state:
     st.session_state.project_title = ""
 if "project_context" not in st.session_state:
     st.session_state.project_context = ""
-if "anthropic_api_key" not in st.session_state:
-    st.session_state.anthropic_api_key = ""
+if "gemini_api_key" not in st.session_state:
+    st.session_state.gemini_api_key = ""
 if "chat_histories" not in st.session_state:
     st.session_state.chat_histories = {}
 
@@ -33,14 +33,17 @@ with st.sidebar:
     st.caption("AI-Driven Multi-Agent Framework for Academic Project Guidance")
 
     st.markdown("### API Configuration")
-    st.session_state.anthropic_api_key = st.text_input(
-        "Anthropic API key",
-        value=st.session_state.anthropic_api_key,
+    st.session_state.gemini_api_key = st.text_input(
+        "Gemini API key",
+        value=st.session_state.gemini_api_key,
         type="password",
-        help="Leave blank to use offline demo mode with canned responses.",
+        help=(
+            "Free key from https://aistudio.google.com/apikey — leave blank "
+            "to use offline demo mode with canned responses."
+        ),
     )
-    if not st.session_state.anthropic_api_key:
-        st.info("Running in offline demo mode. Add a key above for live AI responses.")
+    if not st.session_state.gemini_api_key:
+        st.info("Running in offline demo mode. Add a free Gemini key above for live AI responses.")
 
     st.markdown("### Your Project")
     st.session_state.project_title = st.text_input(
