@@ -1,5 +1,5 @@
 """
-NovaMentor — AI-Driven Multi-Agent Framework for Academic Project Guidance[cite: 1]
+NovaMentor — AI-Driven Multi-Agent Framework for Academic Project Guidance
 """
 
 import hashlib
@@ -29,20 +29,21 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
     return True, "Password is valid."
 
 
+# Pre-configured team logins
 USER_DB = {
     "visanth": {
-        "name": "Visanth K",[cite: 1]
-        "roll_no": "7376242AL220",[cite: 1]
+        "name": "Visanth K",
+        "roll_no": "7376242AL220",
         "password_hash": hashlib.sha256("Visanth@2026".encode()).hexdigest(),
     },
     "ramkumar": {
-        "name": "Ramkumar V",[cite: 1]
-        "roll_no": "7376242AL171",[cite: 1]
+        "name": "Ramkumar V",
+        "roll_no": "7376242AL171",
         "password_hash": hashlib.sha256("Ramkumar@2026".encode()).hexdigest(),
     },
     "sutharsan": {
-        "name": "Sutharsan R",[cite: 1]
-        "roll_no": "7376242AL202",[cite: 1]
+        "name": "Sutharsan R",
+        "roll_no": "7376242AL202",
         "password_hash": hashlib.sha256("Sutharsan@2026".encode()).hexdigest(),
     },
     "student": {
@@ -154,8 +155,7 @@ else:
             format_func=lambda n: n,
             label_visibility="collapsed",
         )
-        
-        # Safely retrieve role description from either an instance or class
+
         raw_agent = AGENT_REGISTRY[selected_agent_name]
         role_desc = getattr(raw_agent, "role_description", "")
         if not role_desc and isinstance(raw_agent, type):
@@ -170,26 +170,22 @@ else:
     if selected_agent_name not in st.session_state.chat_histories:
         st.session_state.chat_histories[selected_agent_name] = []
 
-    # Get active agent instance safely
     if isinstance(raw_agent, type):
         agent = raw_agent()
     else:
         agent = raw_agent
 
-    # Bind history if present
     if hasattr(agent, "history"):
         agent.history = st.session_state.chat_histories[selected_agent_name]
 
     st.title(f"{selected_agent_name}")
     st.caption(getattr(agent, "role_description", ""))
 
-    # Render existing conversation
     history_items = getattr(agent, "history", st.session_state.chat_histories[selected_agent_name])
     for msg in history_items:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Chat input box
     user_input = st.chat_input(f"Ask the {selected_agent_name}...")
     if user_input:
         with st.chat_message("user"):
