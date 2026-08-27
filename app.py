@@ -29,21 +29,20 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
     return True, "Password is valid."
 
 
-# Pre-configured team login credentials[cite: 1]
 USER_DB = {
     "visanth": {
-        "name": "Visanth K",  #[cite: 1]
-        "roll_no": "7376242AL220",  #[cite: 1]
+        "name": "Visanth K",[cite: 1]
+        "roll_no": "7376242AL220",[cite: 1]
         "password_hash": hashlib.sha256("Visanth@2026".encode()).hexdigest(),
     },
     "ramkumar": {
-        "name": "Ramkumar V",  #[cite: 1]
-        "roll_no": "7376242AL171",  #[cite: 1]
+        "name": "Ramkumar V",[cite: 1]
+        "roll_no": "7376242AL171",[cite: 1]
         "password_hash": hashlib.sha256("Ramkumar@2026".encode()).hexdigest(),
     },
     "sutharsan": {
-        "name": "Sutharsan R",  #[cite: 1]
-        "roll_no": "7376242AL202",  #[cite: 1]
+        "name": "Sutharsan R",[cite: 1]
+        "roll_no": "7376242AL202",[cite: 1]
         "password_hash": hashlib.sha256("Sutharsan@2026".encode()).hexdigest(),
     },
     "student": {
@@ -155,7 +154,13 @@ else:
             format_func=lambda n: n,
             label_visibility="collapsed",
         )
-        st.caption(AGENT_REGISTRY[selected_agent_name]([]).role_description)
+        
+        # Safely retrieve role description from either an instance or class
+        raw_agent = AGENT_REGISTRY[selected_agent_name]
+        role_desc = getattr(raw_agent, "role_description", "")
+        if not role_desc and isinstance(raw_agent, type):
+            role_desc = getattr(raw_agent(), "role_description", "")
+        st.caption(role_desc)
 
         st.markdown("---")
         if st.button("🗑️ Clear this agent's chat", use_container_width=True):
@@ -165,27 +170,43 @@ else:
     if selected_agent_name not in st.session_state.chat_histories:
         st.session_state.chat_histories[selected_agent_name] = []
 
-    agent_cls = AGENT_REGISTRY[selected_agent_name]
-    agent = agent_cls(history=st.session_state.chat_histories[selected_agent_name])
+    # Get active agent instance safely
+    if isinstance(raw_agent, type):
+        agent = raw_agent()
+    else:
+        agent = raw_agent
+
+    # Bind history if present
+    if hasattr(agent, "history"):
+        agent.history = st.session_state.chat_histories[selected_agent_name]
 
     st.title(f"{selected_agent_name}")
-    st.caption(agent.role_description)
+    st.caption(getattr(agent, "role_description", ""))
 
-    for msg in agent.history:
+    # Render existing conversation
+    history_items = getattr(agent, "history", st.session_state.chat_histories[selected_agent_name])
+    for msg in history_items:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
+    # Chat input box
     user_input = st.chat_input(f"Ask the {selected_agent_name}...")
     if user_input:
         with st.chat_message("user"):
             st.markdown(user_input)
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                reply = agent.respond(
-                    user_input,
-                    context=st.session_state.project_context,
-                    api_key=st.session_state.gemini_api_key,
-                )
+                try:
+                    reply = agent.respond(
+                        user_input,
+                        context=st.session_state.project_context,
+                        api_key=st.session_state.gemini_api_key,
+                    )
+                except TypeError:
+                    reply = agent.respond(
+                        user_input,
+                        context=st.session_state.project_context,
+                    )
             st.markdown(reply)
             st.rerun()
 
