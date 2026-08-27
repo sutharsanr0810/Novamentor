@@ -3,6 +3,7 @@ NovaMentor — AI-Driven Multi-Agent Framework for Academic Project Guidance
 """
 
 import hashlib
+import os
 import re
 import streamlit as st
 from agents.specialized_agents import AGENT_REGISTRY
@@ -53,6 +54,19 @@ USER_DB = {
     },
 }
 
+# Resolve default API key from Streamlit Secrets or Environment Variables
+detected_secret_key = ""
+try:
+    detected_secret_key = (
+        st.secrets.get("GEMINI_API_KEY", "")
+        or st.secrets.get("GOOGLE_API_KEY", "")
+        or os.environ.get("GEMINI_API_KEY", "")
+        or os.environ.get("GOOGLE_API_KEY", "")
+    )
+except Exception:
+    detected_secret_key = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
+
+# Initialize session state variables
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "username" not in st.session_state:
@@ -64,7 +78,7 @@ if "project_title" not in st.session_state:
 if "project_context" not in st.session_state:
     st.session_state.project_context = ""
 if "gemini_api_key" not in st.session_state:
-    st.session_state.gemini_api_key = ""
+    st.session_state.gemini_api_key = detected_secret_key
 if "chat_histories" not in st.session_state:
     st.session_state.chat_histories = {}
 
@@ -127,14 +141,18 @@ else:
         st.caption("AI-Driven Multi-Agent Framework for Academic Project Guidance")
 
         st.markdown("### API Configuration")
-        st.session_state.gemini_api_key = st.text_input(
+        user_key_input = st.text_input(
             "Gemini API key",
             value=st.session_state.gemini_api_key,
             type="password",
-            help="Free key from Google AI Studio. Leave blank to run offline demo mode.",
+            help="Loaded automatically from Streamlit Secrets if configured. Leave blank for offline demo mode.",
         )
-        if not st.session_state.gemini_api_key:
-            st.info("Running in offline demo mode. Add a Gemini API key above for live AI responses.")
+        st.session_state.gemini_api_key = user_key_input.strip()
+
+        if st.session_state.gemini_api_key:
+            st.success("✅ Gemini API Key active")
+        else:
+            st.warning("⚠️ No key provided. Running in offline demo mode.")
 
         st.markdown("### Your Project")
         st.session_state.project_title = st.text_input(
@@ -167,29 +185,42 @@ else:
             st.session_state.chat_histories[selected_agent_name] = []
             st.rerun()
 
+    # Ensure message history exists for the selected agent
     if selected_agent_name not in st.session_state.chat_histories:
         st.session_state.chat_histories[selected_agent_name] = []
 
+    # Instantiate the agent class safely if needed
     if isinstance(raw_agent, type):
         agent = raw_agent()
     else:
         agent = raw_agent
 
-    if hasattr(agent, "history"):
-        agent.history = st.session_state.chat_histories[selected_agent_name]
+    # Safely inject session history if the agent supports dynamic history assignment
+    try:
+        setattr(agent, "history", st.session_state.chat_histories[selected_agent_name])
+    except (AttributeError, TypeError):
+        pass
 
     st.title(f"{selected_agent_name}")
     st.caption(getattr(agent, "role_description", ""))
 
-    history_items = getattr(agent, "history", st.session_state.chat_histories[selected_agent_name])
-    for msg in history_items:
+    # Render persistent conversation messages
+    current_chat = st.session_state.chat_histories[selected_agent_name]
+    for msg in current_chat:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
+    # User input and agent response handling
     user_input = st.chat_input(f"Ask the {selected_agent_name}...")
     if user_input:
+        # Render and append user prompt immediately
+        st.session_state.chat_histories[selected_agent_name].append(
+            {"role": "user", "content": user_input}
+        )
         with st.chat_message("user"):
             st.markdown(user_input)
+
+        # Generate agent reply
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
@@ -203,8 +234,13 @@ else:
                         user_input,
                         context=st.session_state.project_context,
                     )
-            st.markdown(reply)
-            st.rerun()
+                st.markdown(reply)
+
+        # Save assistant response to state
+        st.session_state.chat_histories[selected_agent_name].append(
+            {"role": "assistant", "content": reply}
+        )
+        st.rerun()
 
     st.markdown("---")
     with st.expander("📄 Export project report (combines all agent conversations)"):
