@@ -101,7 +101,7 @@ class BaseMentorAgent:
         if not clean_key:
             return (
                 f"**[{self.name} — Offline Mode]**\n\n"
-                f"Please provide an active Google Gemini API key in the sidebar or via Streamlit secrets."
+                f"Please provide an active Google Gemini API key in the sidebar."
             )
 
         try:
@@ -112,29 +112,18 @@ class BaseMentorAgent:
                 f"### Student Query:\n{prompt}"
             )
 
-            # Robust multi-model fallback to ensure zero downtime
-            candidate_models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-            last_err = None
-
-            for model_name in candidate_models:
-                try:
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=full_prompt,
-                        config=types.GenerateContentConfig(
-                            system_instruction=self.system_prompt,
-                            temperature=0.4,
-                        ),
-                    )
-                    if response and response.text:
-                        return response.text
-                except Exception as inner_err:
-                    last_err = inner_err
-                    continue
-
-            return f"**API Error Encountered Across Models:** `{str(last_err)}`"
+            # Verified active baseline model
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=self.system_prompt,
+                    temperature=0.4,
+                ),
+            )
+            return response.text
         except Exception as err:
-            return f"**Client Initialization Error:** `{str(err)}`"
+            return f"**API Error Encountered:** `{str(err)}`"
 
 
 class RequirementAnalyzerAgent(BaseMentorAgent):
