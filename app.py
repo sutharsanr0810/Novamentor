@@ -1,14 +1,19 @@
+Here is the entire application merged into a single standalone `app.py` file. It includes the agent definitions, markdown report exporter, secure authentication, and key-sanitizing API pipeline in one place.
+
+```python
 """
 NovaMentor — AI-Driven Multi-Agent Framework for Academic Project Guidance
+Single-File Complete Edition
 """
 
+import datetime
 import hashlib
 import os
 import re
 import streamlit as st
-from agents.specialized_agents import AGENT_REGISTRY
-from utils.export import build_markdown_report
+import google.generativeai as genai
 
+# --- PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="NovaMentor",
     page_icon="🧭",
@@ -16,21 +21,153 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# --- UTILITIES: EXPORT GENERATOR ---
+def build_markdown_report(title: str, context: str, chat_histories: dict) -> str:
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    doc_title = title.strip() if title.strip() else "Academic Project Guidance Report"
 
+    lines = [
+        f"# 🧭 NovaMentor Academic Guidance Report",
+        f"**Project Title:** {doc_title}  ",
+        f"**Generated On:** {timestamp}  ",
+        f"\n---\n",
+        f"## 📋 Project Context & Scope",
+        f"{context.strip() if context.strip() else 'No project context recorded.'}",
+        f"\n---\n",
+        f"## 💬 Multi-Agent Consultation Transcripts\n",
+    ]
+
+    has_chats = False
+    for agent_name, messages in chat_histories.items():
+        if not messages:
+            continue
+        has_chats = True
+        lines.append(f"### 🤖 Agent: {agent_name}\n")
+        for msg in messages:
+            speaker = "👤 **Student**" if msg["role"] == "user" else f"🧭 **{agent_name}**"
+            lines.append(f"{speaker}:\n{msg['content']}\n")
+        lines.append("---\n")
+
+    if not has_chats:
+        lines.append("_No agent conversations were recorded during this session._")
+
+    return "\n".join(lines)
+
+
+# --- AGENTS: SPECIALIZED AGENT CLASSES ---
+class BaseMentorAgent:
+    name: str = "Base Agent"
+    role_description: str = "Academic project mentor."
+    system_prompt: str = "You are a helpful academic project mentor."
+
+    def __init__(self):
+        self.history = []
+
+    def respond(self, prompt: str, context: str = "", api_key: str = "") -> str:
+        # Sanitize API key: remove whitespace, linebreaks, and quotes
+        clean_key = (api_key or "").strip().strip("'").strip('"')
+
+        if not clean_key:
+            return (
+                f"**[{self.name} — Offline Demo Mode]**\n\n"
+                f"To receive live AI-generated guidance, please enter a valid Google Gemini API key in the sidebar.\n\n"
+                f"*Offline Preview Response for:* '{prompt}'\n"
+                f"- Project Context Registered: {'Yes' if context else 'None provided'}\n"
+                f"- Recommendation: Define clear scope, baseline metrics, and IEEE reference standards."
+            )
+
+        try:
+            genai.configure(api_key=clean_key)
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash",
+                system_instruction=self.system_prompt,
+            )
+
+            full_prompt = (
+                f"### Overall Project Context:\n{context or 'No specific context provided.'}\n\n"
+                f"### Student Query:\n{prompt}"
+            )
+
+            response = model.generate_content(full_prompt)
+            return response.text
+
+        except Exception as err:
+            return (
+                f"**API Error Encountered:**\n"
+                f"```text\n{str(err)}\n```\n"
+                f"**Troubleshooting:**\n"
+                f"1. Ensure the key from [Google AI Studio](https://aistudio.google.com/) is copied correctly.\n"
+                f"2. Confirm you haven't exceeded your free tier rate limit."
+            )
+
+
+class RequirementAnalyzerAgent(BaseMentorAgent):
+    name = "Requirement Analyzer"
+    role_description = "Turns a rough project idea into clear scope, objectives, and milestones."
+    system_prompt = (
+        "You are an expert Academic Requirement Analyst. Break down student project ideas "
+        "into structured Problem Statements, Functional/Non-Functional Requirements, "
+        "Hardware/Software constraints, and IEEE-style deliverables."
+    )
+
+
+class ArchitectureAgent(BaseMentorAgent):
+    name = "System Architect"
+    role_description = "Designs system pipelines, data flows, and hardware/software architectures."
+    system_prompt = (
+        "You are a Senior Academic System Architect. Propose end-to-end technical pipelines, "
+        "data flow diagrams (using Mermaid.js where helpful), component interaction layouts, "
+        "and optimal module selections for computer science and engineering projects."
+    )
+
+
+class ResearchReviewerAgent(BaseMentorAgent):
+    name = "Literature Reviewer"
+    role_description = "Finds research gaps, baseline models, and academic benchmarks."
+    system_prompt = (
+        "You are an Academic Research Mentor. Identify relevant IEEE/ACM research gaps, "
+        "state-of-the-art baseline models, benchmark datasets, and standard evaluation metrics (e.g., F1, mAP, Latency)."
+    )
+
+
+class ImplementationAgent(BaseMentorAgent):
+    name = "Implementation Guide"
+    role_description = "Provides pseudocode, optimization advice, and tech-stack choices."
+    system_prompt = (
+        "You are a Senior Software Engineer and Implementation Mentor. Provide clean, modular "
+        "Python/C++ pseudocode, pipeline optimization techniques, and library recommendations (PyTorch, OpenCV, TensorRT)."
+    )
+
+
+class VivaPrepAgent(BaseMentorAgent):
+    name = "Viva & Defense Examiner"
+    role_description = "Conducts mock project defense Q&A sessions with rigorous examiner questions."
+    system_prompt = (
+        "You are a strict Project Defense Examiner. Ask critical questions about trade-offs, "
+        "computational bottlenecks, edge failure cases, ethical implications, and performance validation."
+    )
+
+
+AGENT_REGISTRY = {
+    "Requirement Analyzer": RequirementAnalyzerAgent,
+    "System Architect": ArchitectureAgent,
+    "Literature Reviewer": ResearchReviewerAgent,
+    "Implementation Guide": ImplementationAgent,
+    "Viva & Defense Examiner": VivaPrepAgent,
+}
+
+
+# --- AUTHENTICATION HELPERS ---
 def validate_password_strength(password: str) -> tuple[bool, str]:
     if len(password) < 8:
         return False, "Password must be at least 8 characters long."
     if not re.search(r"\d", password):
         return False, "Password must contain at least one number (0-9)."
     if not re.search(r"[!@#$%^&*(),.?\":{}|<>_\-]", password):
-        return (
-            False,
-            "Password must contain at least one special symbol (e.g., @, #, $, !).",
-        )
+        return False, "Password must contain at least one special symbol (e.g., @, #, $, !)."
     return True, "Password is valid."
 
 
-# Pre-configured team logins
 USER_DB = {
     "visanth": {
         "name": "Visanth K",
@@ -54,19 +191,17 @@ USER_DB = {
     },
 }
 
-# Resolve default API key from Streamlit Secrets or Environment Variables
-detected_secret_key = ""
+# --- INITIALIZE SESSION STATE ---
+default_secret_key = ""
 try:
-    detected_secret_key = (
+    default_secret_key = (
         st.secrets.get("GEMINI_API_KEY", "")
         or st.secrets.get("GOOGLE_API_KEY", "")
         or os.environ.get("GEMINI_API_KEY", "")
-        or os.environ.get("GOOGLE_API_KEY", "")
     )
 except Exception:
-    detected_secret_key = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
+    default_secret_key = os.environ.get("GEMINI_API_KEY", "")
 
-# Initialize session state variables
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "username" not in st.session_state:
@@ -78,11 +213,12 @@ if "project_title" not in st.session_state:
 if "project_context" not in st.session_state:
     st.session_state.project_context = ""
 if "gemini_api_key" not in st.session_state:
-    st.session_state.gemini_api_key = detected_secret_key
+    st.session_state.gemini_api_key = default_secret_key
 if "chat_histories" not in st.session_state:
     st.session_state.chat_histories = {}
 
 
+# --- RENDER LOGIN VIEW ---
 def render_login():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -125,6 +261,7 @@ def render_login():
         )
 
 
+# --- MAIN APPLICATION WORKSPACE ---
 if not st.session_state.authenticated:
     render_login()
 else:
@@ -145,7 +282,7 @@ else:
             "Gemini API key",
             value=st.session_state.gemini_api_key,
             type="password",
-            help="Loaded automatically from Streamlit Secrets if configured. Leave blank for offline demo mode.",
+            help="Loaded automatically from secrets or paste your AI Studio key here.",
         )
         st.session_state.gemini_api_key = user_key_input.strip()
 
@@ -189,38 +326,32 @@ else:
     if selected_agent_name not in st.session_state.chat_histories:
         st.session_state.chat_histories[selected_agent_name] = []
 
-    # Instantiate the agent class safely if needed
-    if isinstance(raw_agent, type):
-        agent = raw_agent()
-    else:
-        agent = raw_agent
+    # Safe agent initialization
+    agent = raw_agent() if isinstance(raw_agent, type) else raw_agent
 
-    # Safely inject session history if the agent supports dynamic history assignment
     try:
-        setattr(agent, "history", st.session_state.chat_histories[selected_agent_name])
+        agent.history = st.session_state.chat_histories[selected_agent_name]
     except (AttributeError, TypeError):
         pass
 
     st.title(f"{selected_agent_name}")
     st.caption(getattr(agent, "role_description", ""))
 
-    # Render persistent conversation messages
+    # Render previous conversation history
     current_chat = st.session_state.chat_histories[selected_agent_name]
     for msg in current_chat:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # User input and agent response handling
+    # Handle chat input and generation
     user_input = st.chat_input(f"Ask the {selected_agent_name}...")
     if user_input:
-        # Render and append user prompt immediately
         st.session_state.chat_histories[selected_agent_name].append(
             {"role": "user", "content": user_input}
         )
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        # Generate agent reply
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
@@ -236,12 +367,12 @@ else:
                     )
                 st.markdown(reply)
 
-        # Save assistant response to state
         st.session_state.chat_histories[selected_agent_name].append(
             {"role": "assistant", "content": reply}
         )
         st.rerun()
 
+    # Export report module
     st.markdown("---")
     with st.expander("📄 Export project report (combines all agent conversations)"):
         report_md = build_markdown_report(
@@ -257,3 +388,5 @@ else:
             mime="text/markdown",
             use_container_width=True,
         )
+
+```
