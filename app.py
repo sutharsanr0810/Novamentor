@@ -1,3 +1,8 @@
+"""
+NovaMentor — AI-Driven Multi-Agent Framework for Academic Project Guidance
+Single-File Complete Edition
+"""
+
 import datetime
 import hashlib
 import os
@@ -56,7 +61,6 @@ class BaseMentorAgent:
         self.history = []
 
     def respond(self, prompt: str, context: str = "", api_key: str = "") -> str:
-        # Sanitize API key: remove whitespace, linebreaks, and quotes
         clean_key = (api_key or "").strip().strip("'").strip('"')
 
         if not clean_key:
@@ -380,5 +384,3 @@ else:
             mime="text/markdown",
             use_container_width=True,
         )
-
-```
