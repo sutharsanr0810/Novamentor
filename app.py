@@ -105,10 +105,11 @@ class BaseMentorAgent:
 
     def fallback_mock_response(self, prompt: str, context: str) -> str:
         """High-quality failsafe generator to ensure zero presentation downtime."""
+        clean_prompt = prompt[:90].replace('"', "'")
         return (
             f"**[{self.name} Analysis]**\n\n"
             f"**1. Core Assessment:**\n"
-            f"Evaluating: *\"{prompt[:90]}...\"* against embedded system constraints.\n\n"
+            f"Evaluating: *{clean_prompt}...* against embedded system constraints.\n\n"
             f"**2. Key Technical Directives:**\n"
             f"- Quantize inference tensors to INT8 to sustain frame rates > 30 FPS.\n"
             f"- Enforce DMA ring buffers to prevent memory saturation during frame ingestion.\n"
@@ -118,7 +119,6 @@ class BaseMentorAgent:
         )
 
     def respond(self, prompt: str, context: str = "", reference_doc: str = "", api_key_str: str = "") -> str:
-        # Parse comma/newline separated API keys into a sanitized list
         raw_keys = (api_key_str or "").replace("\n", ",").split(",")
         key_pool = [k.strip().strip("'").strip('"') for k in raw_keys if k.strip()]
 
@@ -131,7 +131,6 @@ class BaseMentorAgent:
             f"### Student Query:\n{prompt}"
         )
 
-        # Ranked active model candidate pool
         candidate_models = [
             "gemini-3.6-flash",
             "gemini-3.5-flash",
@@ -139,7 +138,6 @@ class BaseMentorAgent:
             "gemini-3.1-flash-lite",
         ]
 
-        # Multi-Key Pool Rotation Loop
         for key in key_pool:
             try:
                 client = genai.Client(api_key=key)
@@ -156,13 +154,10 @@ class BaseMentorAgent:
                         if response and response.text:
                             return response.text
                     except Exception:
-                        # Model failed or 503 busy; rotate to next candidate model
                         continue
             except Exception:
-                # Key invalid or rejected; rotate to next API key in pool
                 continue
 
-        # If all keys and endpoints fail, trigger failsafe
         return self.fallback_mock_response(prompt, context)
 
 
