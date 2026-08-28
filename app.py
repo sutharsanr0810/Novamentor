@@ -1,4 +1,3 @@
-```python
 """
 NovaMentor Pro — AI-Driven Multi-Agent Academic Framework
 Features: Multi-Agent Debate, PDF Grounding, Architecture Diagrams, Viva Examiner Scoring
@@ -118,7 +117,6 @@ class BaseMentorAgent:
                 f"### Student Query:\n{prompt}"
             )
 
-            # Updated model name to gemini-3.6-flash
             response = client.models.generate_content(
                 model="gemini-3.6-flash",
                 contents=full_prompt,
@@ -390,55 +388,4 @@ else:
                     ("Requirement Analyzer", "Define the core problem scope, functional boundaries, and target criteria."),
                     ("System Architect", "Based on these requirements, design the end-to-end pipeline and dataflow."),
                     ("Literature Reviewer", "Critique this design against state-of-the-art IEEE benchmarks and identify gaps."),
-                    ("Viva & Defense Examiner", "Evaluate the proposal for weaknesses, computational bottlenecks, and assign a feasibility rating."),
-                ]
-
-                conversation_so_far = f"Project Context:\n{st.session_state.project_context}\n\n"
-
-                with st.status("Committee in Session...", expanded=True) as status:
-                    for agent_name, instruction in committee_order:
-                        agent_obj = AGENT_REGISTRY[agent_name]()
-                        status.write(f"🧭 **{agent_name}** is reviewing...")
-                        
-                        prompt = f"{instruction}\n\nTranscript of Committee Debate So Far:\n{conversation_so_far}"
-                        reply = agent_obj.respond(
-                            prompt=prompt,
-                            context=st.session_state.project_context,
-                            reference_doc=st.session_state.reference_text,
-                            api_key=effective_api_key,
-                        )
-                        st.session_state.roundtable_log.append({"agent": agent_name, "content": reply})
-                        conversation_so_far += f"\n[{agent_name}]: {reply}\n"
-
-                    status.update(label="Committee Review Complete!", state="complete", expanded=False)
-                st.rerun()
-
-        # Display Roundtable History
-        if st.session_state.roundtable_log:
-            for entry in st.session_state.roundtable_log:
-                with st.expander(f"🤖 {entry['agent']}", expanded=True):
-                    st.markdown(entry["content"])
-
-    # --- TAB 3: EXPORT DOSSIER ---
-    with tab_export:
-        st.markdown("### 📄 Export Comprehensive Academic Report")
-        report_md = build_markdown_report(
-            st.session_state.project_title,
-            st.session_state.project_context,
-            st.session_state.reference_filename,
-            st.session_state.chat_histories,
-            st.session_state.roundtable_log,
-        )
-        st.text_area("Markdown Dossier Preview", report_md, height=350)
-
-        filename = f"{(st.session_state.project_title or 'NovaMentor_Project').replace(' ', '_')}_Report.md"
-        st.download_button(
-            label="⬇️ Download Markdown Report (.md)",
-            data=report_md,
-            file_name=filename,
-            mime="text/markdown",
-            type="primary",
-            use_container_width=True,
-        )
-
-```
+                    ("Viva & Defense Examiner", "Evaluate the proposal for
