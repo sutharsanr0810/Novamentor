@@ -1,8 +1,3 @@
-"""
-NovaMentor Pro — AI-Driven Multi-Agent Academic Framework
-Features: Multi-Agent Debate, PDF Grounding, Architecture Diagrams, Viva Examiner Scoring
-"""
-
 import datetime
 import hashlib
 import os
@@ -105,8 +100,8 @@ class BaseMentorAgent:
         clean_key = (api_key or "").strip().strip("'").strip('"')
         if not clean_key:
             return (
-                f"**[{self.name} — Offline Mode]**\n"
-                f"Please provide an active Google Gemini API key in the sidebar or via Streamlit secrets to generate live technical guidance."
+                f"**[{self.name} — Offline Mode]**\n\n"
+                f"Please provide an active Google Gemini API key in the sidebar or via Streamlit secrets."
             )
 
         try:
@@ -117,17 +112,29 @@ class BaseMentorAgent:
                 f"### Student Query:\n{prompt}"
             )
 
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=full_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=self.system_prompt,
-                    temperature=0.4,
-                ),
-            )
-            return response.text
+            # Robust multi-model fallback to ensure zero downtime
+            candidate_models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+            last_err = None
+
+            for model_name in candidate_models:
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=full_prompt,
+                        config=types.GenerateContentConfig(
+                            system_instruction=self.system_prompt,
+                            temperature=0.4,
+                        ),
+                    )
+                    if response and response.text:
+                        return response.text
+                except Exception as inner_err:
+                    last_err = inner_err
+                    continue
+
+            return f"**API Error Encountered Across Models:** `{str(last_err)}`"
         except Exception as err:
-            return f"**API Error Encountered:** `{str(err)}`"
+            return f"**Client Initialization Error:** `{str(err)}`"
 
 
 class RequirementAnalyzerAgent(BaseMentorAgent):
@@ -263,7 +270,6 @@ else:
         st.markdown("---")
         st.markdown("### 🔑 API Configuration")
         
-        # Dynamic secrets resolution
         detected_secret = get_configured_api_key()
         if "gemini_api_key" not in st.session_state or not st.session_state.gemini_api_key:
             st.session_state.gemini_api_key = detected_secret
@@ -272,7 +278,7 @@ else:
             "Gemini API Key", 
             type="password", 
             key="gemini_api_key", 
-            help="Loaded automatically from Streamlit Secrets or enter manually."
+            help="Paste your API key here or load via Streamlit Secrets."
         )
         
         active_key = (st.session_state.gemini_api_key or detected_secret or "").strip()
@@ -310,10 +316,8 @@ else:
             st.session_state.roundtable_log = []
             st.rerun()
 
-    # Effective key to pass to all agents
     effective_api_key = (st.session_state.gemini_api_key or detected_secret or "").strip()
 
-    # Main Navigation Tabs
     tab_agents, tab_roundtable, tab_export = st.tabs([
         "💬 Individual Agents",
         "🏛️ Multi-Agent Roundtable",
@@ -338,12 +342,10 @@ else:
         if selected_agent_name not in st.session_state.chat_histories:
             st.session_state.chat_histories[selected_agent_name] = []
 
-        # Display history
         for msg in st.session_state.chat_histories[selected_agent_name]:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-        # Chat Input
         user_input = st.chat_input(f"Consult with the {selected_agent_name}...")
         if user_input:
             st.session_state.chat_histories[selected_agent_name].append({"role": "user", "content": user_input})
@@ -417,7 +419,6 @@ else:
 
                 st.rerun()
 
-        # Render Committee Discussions
         if st.session_state.roundtable_log:
             for turn in st.session_state.roundtable_log:
                 with st.expander(f"📌 {turn['agent']}", expanded=True):
