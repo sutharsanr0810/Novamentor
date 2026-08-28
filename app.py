@@ -1,11 +1,3 @@
-Here is the entire application merged into a single standalone `app.py` file. It includes the agent definitions, markdown report exporter, secure authentication, and key-sanitizing API pipeline in one place.
-
-```python
-"""
-NovaMentor — AI-Driven Multi-Agent Framework for Academic Project Guidance
-Single-File Complete Edition
-"""
-
 import datetime
 import hashlib
 import os
