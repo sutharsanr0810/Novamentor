@@ -1,3 +1,8 @@
+"""
+NovaMentor Pro — AI-Driven Multi-Agent Academic Framework
+Features: Multi-Agent Debate, PDF Grounding, Architecture Diagrams, Viva Examiner Scoring
+"""
+
 import datetime
 import hashlib
 import os
@@ -112,9 +117,8 @@ class BaseMentorAgent:
                 f"### Student Query:\n{prompt}"
             )
 
-            # Verified active baseline model
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash",
                 contents=full_prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=self.system_prompt,
