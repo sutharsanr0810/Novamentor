@@ -1,6 +1,6 @@
 """
 NovaMentor Pro — AI-Driven Multi-Agent Academic Framework
-Features: Multi-Agent Debate, PDF Grounding, Architecture Diagrams, Viva Examiner Scoring
+Features: Dynamic Secrets Resolution, Multi-Agent Debate, PDF Grounding, Architecture Diagrams, Viva Examiner Scoring
 """
 
 import datetime
@@ -26,6 +26,18 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# --- UTILITIES: SECRETS RESOLVER ---
+def get_configured_api_key() -> str:
+    """Safely retrieves API key from Streamlit Secrets or Environment Variables."""
+    try:
+        if "GEMINI_API_KEY" in st.secrets:
+            return st.secrets["GEMINI_API_KEY"].strip()
+        if "GOOGLE_API_KEY" in st.secrets:
+            return st.secrets["GOOGLE_API_KEY"].strip()
+    except Exception:
+        pass
+    return os.environ.get("GEMINI_API_KEY", "").strip()
+
 # --- UTILITIES: FILE PARSER ---
 def extract_file_content(uploaded_file) -> str:
     if uploaded_file is None:
@@ -35,14 +47,13 @@ def extract_file_content(uploaded_file) -> str:
         if filename.endswith(".pdf") and PDF_ENABLED:
             reader = PdfReader(uploaded_file)
             text = "\n".join([page.extract_text() or "" for page in reader.pages])
-            return text[:15000]  # Safe token budget
+            return text[:15000]
         elif filename.endswith((".txt", ".md", ".py", ".csv")):
             return uploaded_file.getvalue().decode("utf-8")[:15000]
         else:
             return f"[Uploaded file: {uploaded_file.name} — binary format omitted]"
     except Exception as e:
         return f"[Error extracting file content: {str(e)}]"
-
 
 # --- UTILITIES: EXPORT BUILDER ---
 def build_markdown_report(title: str, context: str, file_name: str, chat_histories: dict, roundtable_log: list) -> str:
@@ -95,7 +106,7 @@ class BaseMentorAgent:
         if not clean_key:
             return (
                 f"**[{self.name} — Offline Mode]**\n"
-                f"Please provide an active Google Gemini API key in the sidebar to generate live technical guidance."
+                f"Please provide an active Google Gemini API key in the sidebar or via Streamlit secrets to generate live technical guidance."
             )
 
         try:
@@ -116,7 +127,7 @@ class BaseMentorAgent:
             )
             return response.text
         except Exception as err:
-            return f"**API Error:** `{str(err)}`"
+            return f"**API Error Encountered:** `{str(err)}`"
 
 
 class RequirementAnalyzerAgent(BaseMentorAgent):
@@ -200,13 +211,6 @@ if "reference_text" not in st.session_state:
     st.session_state.reference_text = ""
 if "reference_filename" not in st.session_state:
     st.session_state.reference_filename = ""
-if "gemini_api_key" not in st.session_state:
-    secret_key = ""
-    try:
-        secret_key = st.secrets.get("GEMINI_API_KEY", "") or st.secrets.get("GOOGLE_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
-    except Exception:
-        secret_key = os.environ.get("GEMINI_API_KEY", "")
-    st.session_state.gemini_api_key = secret_key
 if "chat_histories" not in st.session_state:
     st.session_state.chat_histories = {}
 if "roundtable_log" not in st.session_state:
@@ -258,16 +262,28 @@ else:
 
         st.markdown("---")
         st.markdown("### 🔑 API Configuration")
-        st.text_input("Gemini API Key", type="password", key="gemini_api_key", help="Paste your key from Google AI Studio")
-        active_key = (st.session_state.gemini_api_key or "").strip()
+        
+        # Dynamic secrets resolution
+        detected_secret = get_configured_api_key()
+        if "gemini_api_key" not in st.session_state or not st.session_state.gemini_api_key:
+            st.session_state.gemini_api_key = detected_secret
+
+        st.text_input(
+            "Gemini API Key", 
+            type="password", 
+            key="gemini_api_key", 
+            help="Loaded automatically from Streamlit Secrets or enter manually."
+        )
+        
+        active_key = (st.session_state.gemini_api_key or detected_secret or "").strip()
         if active_key:
-            st.success(f"Key Active: `{active_key[:5]}...{active_key[-3:]}`")
+            st.success(f"✅ Key Active: `{active_key[:5]}...{active_key[-3:]}`")
         else:
             st.warning("⚠️ No API Key configured.")
 
         st.markdown("---")
         st.markdown("### 📑 Project Dossier")
-        st.text_input("Project Title", key="project_title", placeholder="e.g., Edge AI Attendance System")
+        st.text_input("Project Title", key="project_title", placeholder="e.g., Edge AI Drone Monitoring")
         st.text_area(
             "Project Scope & Context",
             key="project_context",
@@ -293,6 +309,9 @@ else:
             st.session_state.chat_histories = {}
             st.session_state.roundtable_log = []
             st.rerun()
+
+    # Effective key to pass to all agents
+    effective_api_key = (st.session_state.gemini_api_key or detected_secret or "").strip()
 
     # Main Navigation Tabs
     tab_agents, tab_roundtable, tab_export = st.tabs([
@@ -324,7 +343,7 @@ else:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-        # Input
+        # Chat Input
         user_input = st.chat_input(f"Consult with the {selected_agent_name}...")
         if user_input:
             st.session_state.chat_histories[selected_agent_name].append({"role": "user", "content": user_input})
@@ -337,7 +356,7 @@ else:
                         prompt=user_input,
                         context=st.session_state.project_context,
                         reference_doc=st.session_state.reference_text,
-                        api_key=st.session_state.gemini_api_key,
+                        api_key=effective_api_key,
                     )
                     st.markdown(reply)
 
@@ -384,7 +403,7 @@ else:
                             prompt=prompt,
                             context=st.session_state.project_context,
                             reference_doc=st.session_state.reference_text,
-                            api_key=st.session_state.gemini_api_key,
+                            api_key=effective_api_key,
                         )
                         st.session_state.roundtable_log.append({"agent": agent_name, "content": reply})
                         conversation_so_far += f"\n[{agent_name}]: {reply}\n"
