@@ -118,7 +118,7 @@ class BaseMentorAgent:
             )
 
             response = client.models.generate_content(
-                model="gemini-3.6-flash",
+                model="gemini-2.5-flash",
                 contents=full_prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=self.system_prompt,
@@ -388,4 +388,61 @@ else:
                     ("Requirement Analyzer", "Define the core problem scope, functional boundaries, and target criteria."),
                     ("System Architect", "Based on these requirements, design the end-to-end pipeline and dataflow."),
                     ("Literature Reviewer", "Critique this design against state-of-the-art IEEE benchmarks and identify gaps."),
-                    ("Viva & Defense Examiner", "Evaluate the proposal for
+                    ("Viva & Defense Examiner", "Evaluate the proposal for defense viability, identify edge-case vulnerabilities, and assign a preliminary readiness score out of 10."),
+                ]
+
+                running_context = (
+                    f"Title: {st.session_state.project_title}\n"
+                    f"Scope & Context: {st.session_state.project_context}\n"
+                )
+
+                for agent_name, prompt_task in committee_order:
+                    agent_instance = AGENT_REGISTRY[agent_name]()
+                    with st.spinner(f"{agent_name} is deliberating..."):
+                        debate_prompt = (
+                            f"Task: {prompt_task}\n\n"
+                            f"Previous Committee Deliberations:\n{running_context}"
+                        )
+                        agent_reply = agent_instance.respond(
+                            prompt=debate_prompt,
+                            context=st.session_state.project_context,
+                            reference_doc=st.session_state.reference_text,
+                            api_key=effective_api_key,
+                        )
+                        st.session_state.roundtable_log.append({
+                            "agent": agent_name,
+                            "content": agent_reply,
+                        })
+                        running_context += f"\n\n[{agent_name} Contribution]:\n{agent_reply}\n"
+
+                st.rerun()
+
+        # Render Committee Discussions
+        if st.session_state.roundtable_log:
+            for turn in st.session_state.roundtable_log:
+                with st.expander(f"📌 {turn['agent']}", expanded=True):
+                    st.markdown(turn["content"])
+
+    # --- TAB 3: EXPORT DOSSIER ---
+    with tab_export:
+        st.markdown("### 📄 Export Academic Defense Dossier")
+        st.write("Generate and download a consolidated Markdown report containing all project context, committee deliberations, and specialist consultations.")
+
+        dossier_content = build_markdown_report(
+            title=st.session_state.project_title,
+            context=st.session_state.project_context,
+            file_name=st.session_state.reference_filename,
+            chat_histories=st.session_state.chat_histories,
+            roundtable_log=st.session_state.roundtable_log,
+        )
+
+        st.download_button(
+            label="📥 Download Dossier (.md)",
+            data=dossier_content,
+            file_name=f"{re.sub(r'[^a-zA-Z0-9_-]', '_', st.session_state.project_title or 'novamentor_dossier')}.md",
+            mime="text/markdown",
+            use_container_width=True,
+        )
+
+        st.markdown("#### Document Preview")
+        st.text_area("Markdown Preview", value=dossier_content, height=400)
